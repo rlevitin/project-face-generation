@@ -102,6 +102,9 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+<<<<<<< HEAD
 
 # files
 processed*
+=======
+>>>>>>> 1176292575e2ddbc1c9934a7fa3684438d102b87
