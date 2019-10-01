@@ -82,7 +82,8 @@ def get_dataloader(batch_size, image_size, data_dir='processed_celeba_small/'):
     """
     
     # TODO: Implement function and return a dataloader
-    transform = transforms.Compose([transforms.ToTensor()])
+    transform = transforms.Compose([transforms.Resize(image_size),
+                                    transforms.ToTensor()])
 
     datafolder = datasets.ImageFolder(root = data_dir, transform = transform)
     dataloader = torch.utils.data.DataLoader(datafolder, batch_size = batch_size, shuffle = True) 
@@ -100,7 +101,7 @@ def get_dataloader(batch_size, image_size, data_dir='processed_celeba_small/'):
 
 #%%
 # Define function hyperparameters
-batch_size = 200
+batch_size = 64
 img_size = 32
 
 """
@@ -380,8 +381,8 @@ def build_network(d_conv_dim, g_conv_dim, z_size):
 
 #%%
 # Define model hyperparams
-d_conv_dim = 32
-g_conv_dim = 32
+d_conv_dim = 128
+g_conv_dim = 128
 z_size = 100
 
 """
@@ -480,8 +481,8 @@ beta1 = 0.5
 beta2 = 0.999 # defaults
 
 # Create optimizers for the discriminator D and generator G
-d_optimizer = optim.Adam(D.parameters(), lr*0.05, [beta1, beta2])
-g_optimizer = optim.Adam(G.parameters(), lr*10, [beta1, beta2])
+d_optimizer = optim.Adam(D.parameters(), lr, [beta1, beta2])
+g_optimizer = optim.Adam(G.parameters(), lr, [beta1, beta2])
 
 #%% [markdown]
 # ---
@@ -651,7 +652,7 @@ def view_samples(epoch, samples):
         img = ((img + 1)*255 / (2)).astype(np.uint8)
         ax.xaxis.set_visible(False)
         ax.yaxis.set_visible(False)
-        im = ax.imshow(img.reshape((32,32,3)))
+        img = ax.imshow(img.reshape((32,32,3)))
 
 
 #%%
@@ -672,7 +673,16 @@ _ = view_samples(-1, samples)
 # 
 #%% [markdown]
 # **Answer:** (Write your answer in this cell)
+# The output looks suprisingly similar to the original dataset. ALthough it did turn out to be pixelated, the original dataset was too pixelated the original dataset was too.
+# I used only 3 convolutional layers in the discriminator and 3 transpose convolutional layers in the generator to yield pretty good results (to my eye).
+# Additional complexity would probably only add to the training time without really adding to the end result.
+# I don't know the data set well enough to be able to tell if the output is just a "memorized" input, but it does make me wonder whether an even simpler model might have made more "creative" results.
+# Something I did not play with, but would consider is additional transforms on the input dataset for "augmentation" to see what effect that would have on the output.
+
 #%% [markdown]
 # ### Submitting This Project
 # When submitting this project, make sure to run all the cells before saving the notebook. Save the notebook file as "dlnd_face_generation.ipynb" and save it as a HTML file under "File" -> "Download as". Include the "problem_unittests.py" files in your submission.
 
+
+
+#%%
