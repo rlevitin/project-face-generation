@@ -1,5 +1,6 @@
 #%%
 from IPython import get_ipython
+from IPython.display import display, Image
 
 #%% [markdown]
 # # Face Generation
@@ -23,11 +24,11 @@ from IPython import get_ipython
 # > If you are working locally, you can download this data [by clicking here](https://s3.amazonaws.com/video.udacity-data.com/topher/2018/November/5be7eb6f_processed-celeba-small/processed-celeba-small.zip)
 # 
 # This is a zip file that you'll need to extract in the home directory of this notebook for further loading and processing. After extracting the data, you should be left with a directory of data `processed_celeba_small/`
+display(Image('assets/processed_face_data.png'))
 
 #%%
 # can comment out after executing
-get_ipython().system('unzip processed_celeba_small.zip')
-
+# get_ipython().system('unzip processed_celeba_small.zip') 
 
 #%%
 data_dir = 'processed_celeba_small/'
@@ -81,8 +82,12 @@ def get_dataloader(batch_size, image_size, data_dir='processed_celeba_small/'):
     """
     
     # TODO: Implement function and return a dataloader
-    
-    return None
+    transform = transforms.Compose([transforms.ToTensor()])
+
+    datafolder = datasets.ImageFolder(root = data_dir, transform = transform)
+    dataloader = torch.utils.data.DataLoader(datafolder, batch_size = batch_size, shuffle = True) 
+
+    return dataloader
 
 #%% [markdown]
 # ## Create a DataLoader
@@ -95,8 +100,8 @@ def get_dataloader(batch_size, image_size, data_dir='processed_celeba_small/'):
 
 #%%
 # Define function hyperparameters
-batch_size = 
-img_size = 
+batch_size = 200
+img_size = 32
 
 """
 DON'T MODIFY ANYTHING IN THIS CELL THAT IS BELOW THIS LINE
@@ -142,6 +147,9 @@ def scale(x, feature_range=(-1, 1)):
        This function assumes that the input x is already scaled from 0-1.'''
     # assume x is scaled to (0, 1)
     # scale to feature_range and return scaled x
+    min, max = feature_range
+
+    x = x * (max - min) + min
     
     return x
 
@@ -177,6 +185,33 @@ print('Max: ', scaled_img.max())
 import torch.nn as nn
 import torch.nn.functional as F
 
+#%%
+# Helper functions
+def conv(in_channels, out_channels, kernel_size, stride=2, padding=1, batch_norm=True):
+    """Wrapper function to create a convolutional layer, with optional batch normalization
+    """
+    layers = []
+    layers.append(nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
+                            kernel_size=kernel_size, stride=stride, padding=padding, bias=False))
+
+    # optional batch norm
+    if batch_norm:
+        layers.append(nn.BatchNorm2d(out_channels))
+
+    return nn.Sequential(*layers)
+
+def deconv(in_channels, out_channels, kernel_size, stride=2, padding=1, batch_norm=True):
+    """Wrapper functino to create transpose convolution with batch normalization.
+    """
+    layers = []
+    layers.append(nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, 
+                    kernel_size=kernel_size, stride=stride, padding=padding, bias=False))
+
+    # optional batch norm
+    if batch_norm:
+        layers.append(nn.BatchNorm2d(out_channels))
+
+    return nn.Sequential(*layers)
 
 #%%
 class Discriminator(nn.Module):
@@ -188,8 +223,19 @@ class Discriminator(nn.Module):
         """
         super(Discriminator, self).__init__()
 
+        # Input images are [32, 32, 3]
+        self.conv_dim = conv_dim
+
         # complete init function
+        self.conv1 = conv(3, conv_dim, 4, batch_norm=False)  # out [16, 16, 32] (if conv_dim is 32)
+        self.conv2 = conv(conv_dim, conv_dim*2, 4)  # out [8, 8, 64]
+        self.conv3 = conv(conv_dim*2, conv_dim*4, 4)  # out [4, 4, 128]
         
+        # Classification Layer
+        self.fc = nn.Linear(conv_dim*4*4*4, 1) # multiply x, y, depth
+
+        # Dropout Layer
+        self.dropout = nn.Dropout(0.2)
 
     def forward(self, x):
         """
@@ -198,8 +244,18 @@ class Discriminator(nn.Module):
         :return: Discriminator logits; the output of the neural network
         """
         # define feedforward behavior
+        out = F.leaky_relu(self.conv1(x), 0.2)
+        out = F.leaky_relu(self.conv2(out), 0.2)
+        out = F.leaky_relu(self.conv3(out), 0.2)
+
+        # Flatten
+        out = out.view(-1, self.conv_dim*4*4*4)
+        out = self.dropout(out)
+
+        # classification step
+        out = self.fc(out)
         
-        return x
+        return out
 
 
 """
@@ -226,9 +282,16 @@ class Generator(nn.Module):
         :param conv_dim: The depth of the inputs to the *last* transpose convolutional layer
         """
         super(Generator, self).__init__()
-
         # complete init function
-        
+
+        # Save conv_dim for use in forward loop
+        self.conv_dim = conv_dim
+
+        self.fc = nn.Linear(z_size, conv_dim * 4 * 4 * 4)
+
+        self.t_conv1 = deconv(conv_dim*4, conv_dim*2, kernel_size = 4)
+        self.t_conv2 = deconv(conv_dim*2, conv_dim, kernel_size = 4)
+        self.t_conv3 = deconv(conv_dim, 3, kernel_size = 4, batch_norm = False)
 
     def forward(self, x):
         """
@@ -237,8 +300,18 @@ class Generator(nn.Module):
         :return: A 32x32x3 Tensor image as output
         """
         # define feedforward behavior
+        out = self.fc(x)
+        # Reshape the output to [batch_size, conv_dim*4, 4, 4]
+        out = out.view(-1, self.conv_dim*4, 4, 4) 
+
+        out = F.relu(self.t_conv1(out))
+        out = F.relu(self.t_conv2(out))
+
+        # Last out layer and tanh convolution
+        out = self.t_conv3(out) 
+        out = torch.tanh(out)
         
-        return x
+        return out
 
 """
 DON'T MODIFY ANYTHING IN THIS CELL THAT IS BELOW THIS LINE
@@ -272,9 +345,10 @@ def weights_init_normal(m):
     # classname will be something like:
     # `Conv`, `BatchNorm2d`, `Linear`, etc.
     classname = m.__class__.__name__
-    
+
     # TODO: Apply initial weights to convolutional and linear layers
-    
+    if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
     
 
 #%% [markdown]
@@ -306,9 +380,9 @@ def build_network(d_conv_dim, g_conv_dim, z_size):
 
 #%%
 # Define model hyperparams
-d_conv_dim = 
-g_conv_dim = 
-z_size = 
+d_conv_dim = 32
+g_conv_dim = 32
+z_size = 100
 
 """
 DON'T MODIFY ANYTHING IN THIS CELL THAT IS BELOW THIS LINE
@@ -359,18 +433,35 @@ else:
 # **You may choose to use either cross entropy or a least squares error loss to complete the following `real_loss` and `fake_loss` functions.**
 
 #%%
-def real_loss(D_out):
+def real_loss(D_out, smooth = False):
     '''Calculates how close discriminator outputs are to being real.
        param, D_out: discriminator logits
        return: real loss'''
-    loss = 
+    batch_size = D_out.size(0)
+
+    if smooth:
+        labels = torch.ones(batch_size) * 0.9
+    else:
+        labels = torch.ones(batch_size)
+
+    if train_on_gpu:
+        labels = labels.cuda()
+
+    criterion = nn.BCEWithLogitsLoss()
+    loss = criterion(D_out.squeeze(), labels)
+
     return loss
 
 def fake_loss(D_out):
     '''Calculates how close discriminator outputs are to being fake.
        param, D_out: discriminator logits
        return: fake loss'''
-    loss = 
+    batch_size = D_out.size(0)
+    labels = torch.zeros(batch_size)
+    if train_on_gpu:
+        labels = labels.cuda()
+    criterion = nn.BCEWithLogitsLoss()
+    loss = criterion(D_out.squeeze(), labels)
     return loss
 
 #%% [markdown]
@@ -383,9 +474,14 @@ def fake_loss(D_out):
 #%%
 import torch.optim as optim
 
+# Params
+lr = 0.0002
+beta1 = 0.5
+beta2 = 0.999 # defaults
+
 # Create optimizers for the discriminator D and generator G
-d_optimizer = 
-g_optimizer = 
+d_optimizer = optim.Adam(D.parameters(), lr*0.05, [beta1, beta2])
+g_optimizer = optim.Adam(G.parameters(), lr*10, [beta1, beta2])
 
 #%% [markdown]
 # ---
@@ -400,6 +496,7 @@ g_optimizer =
 # #### Saving Samples
 # 
 # You've been given some code to print out some loss statistics and save some generated "fake" samples.
+
 #%% [markdown]
 # #### Exercise: Complete the training function
 # 
@@ -444,12 +541,44 @@ def train(D, G, n_epochs, print_every=50):
             # ===============================================
             #         YOUR CODE HERE: TRAIN THE NETWORKS
             # ===============================================
-            
+
             # 1. Train the discriminator on real and fake images
-            d_loss = 
+            d_optimizer.zero_grad()            
+
+            if train_on_gpu:
+                real_images = real_images.cuda()
+            
+            D_real = D(real_images)
+            d_real_loss = real_loss(D_real)
+
+            z = np.random.uniform(-1, 1, size=(batch_size, z_size))
+            z = torch.from_numpy(z).float()
+            if train_on_gpu:
+                z = z.cuda()
+
+            fake_image = G(z)
+            D_fake = D(fake_image)
+            d_fake_loss = fake_loss(D_fake) 
+
+            d_loss = d_real_loss + d_fake_loss
+            d_loss.backward()
+            d_optimizer.step()
 
             # 2. Train the generator with an adversarial loss
-            g_loss = 
+            g_optimizer.zero_grad()
+
+            z = np.random.uniform(-1, 1, size=(batch_size, z_size))
+            z = torch.from_numpy(z).float()
+            if train_on_gpu:
+                z = z.cuda()
+
+            fake_image = G(z)
+
+            D_fake = D(fake_image)
+            g_loss = real_loss(D_fake) # If Generator did well D will think fake_image is real
+
+            g_loss.backward()
+            g_optimizer.step()
             
             
             # ===============================================
@@ -485,7 +614,7 @@ def train(D, G, n_epochs, print_every=50):
 
 #%%
 # set number of epochs 
-n_epochs = 
+n_epochs = 40
 
 
 """
