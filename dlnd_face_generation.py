@@ -70,7 +70,6 @@ import torch
 from torchvision import datasets
 from torchvision import transforms
 
-
 #%%
 def get_dataloader(batch_size, image_size, data_dir='processed_celeba_small/'):
     """
@@ -246,18 +245,18 @@ class Discriminator(nn.Module):
         """
         # define feedforward behavior
         out = F.leaky_relu(self.conv1(x), 0.2)
+        out = self.dropout(out)
         out = F.leaky_relu(self.conv2(out), 0.2)
+        out = self.dropout(out)
         out = F.leaky_relu(self.conv3(out), 0.2)
 
         # Flatten
         out = out.view(-1, self.conv_dim*4*4*4)
-        out = self.dropout(out)
 
         # classification step
         out = self.fc(out)
         
         return out
-
 
 """
 DON'T MODIFY ANYTHING IN THIS CELL THAT IS BELOW THIS LINE
@@ -294,6 +293,9 @@ class Generator(nn.Module):
         self.t_conv2 = deconv(conv_dim*2, conv_dim, kernel_size = 4)
         self.t_conv3 = deconv(conv_dim, 3, kernel_size = 4, batch_norm = False)
 
+        # Dropout layer
+        self.dropout = nn.Dropout(0.2)
+
     def forward(self, x):
         """
         Forward propagation of the neural network
@@ -305,8 +307,10 @@ class Generator(nn.Module):
         # Reshape the output to [batch_size, conv_dim*4, 4, 4]
         out = out.view(-1, self.conv_dim*4, 4, 4) 
 
-        out = F.relu(self.t_conv1(out))
-        out = F.relu(self.t_conv2(out))
+        out = F.leaky_relu(self.t_conv1(out), 0.2)
+        out = self.dropout(out)
+        out = F.leaky_relu(self.t_conv2(out), 0.2)
+        out = self.dropout(out)
 
         # Last out layer and tanh convolution
         out = self.t_conv3(out) 
@@ -476,8 +480,8 @@ def fake_loss(D_out):
 import torch.optim as optim
 
 # Params
-lr = 0.0002
-beta1 = 0.5
+lr = 0.0005
+beta1 = 0.3
 beta2 = 0.999 # defaults
 
 # Create optimizers for the discriminator D and generator G
@@ -615,8 +619,7 @@ def train(D, G, n_epochs, print_every=50):
 
 #%%
 # set number of epochs 
-n_epochs = 40
-
+n_epochs = 50
 
 """
 DON'T MODIFY ANYTHING IN THIS CELL
@@ -682,7 +685,3 @@ _ = view_samples(-1, samples)
 #%% [markdown]
 # ### Submitting This Project
 # When submitting this project, make sure to run all the cells before saving the notebook. Save the notebook file as "dlnd_face_generation.ipynb" and save it as a HTML file under "File" -> "Download as". Include the "problem_unittests.py" files in your submission.
-
-
-
-#%%
